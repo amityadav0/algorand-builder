@@ -1,5 +1,7 @@
+import { Kmd } from "algosdk";
 import { assert } from "chai";
 import path from "path";
+import sinon from 'sinon';
 
 import {
   TASK_CLEAN,
@@ -11,17 +13,37 @@ import {
   TASK_TEST_GET_TEST_FILES
 } from "../../../../src/builtin-tasks/task-names";
 import { BuilderContext } from "../../../../src/internal/context";
-import { loadConfigAndTasks } from "../../../../src/internal/core/config/config-loading";
+import { loadConfigAndTasks, loadKMDAccounts } from "../../../../src/internal/core/config/config-loading";
 import { ERRORS } from "../../../../src/internal/core/errors-list";
 import { resetBuilderContext } from "../../../../src/internal/reset";
+import { KMDOperator } from "../../../../src/lib/account";
+import { createKmdClient } from "../../../../src/lib/driver";
+import { Account, KmdCfg, NetworkConfig } from "../../../../src/types";
 import { assertAccountsEqual } from "../../../helpers/assert-methods";
 import { useEnvironment } from "../../../helpers/environment";
-import { expectBuilderError } from "../../../helpers/errors";
+import { expectBuilderErrorAsync } from "../../../helpers/errors";
 import {
   getFixtureProjectPath,
   useFixtureProject
 } from "../../../helpers/project";
 import { account1 } from "../../../mocks/account";
+
+class KMDOperatorMock extends KMDOperator {
+  accounts = [] as Account[];
+  skArray = Array.from({ length: 64 }, (_, i) => i + 1);
+
+  resetAccounts (): void {
+    this.accounts = [];
+  }
+
+  addKmdAccount (acc: Account): void {
+    this.accounts.push(acc);
+  }
+
+  async loadKMDAccounts (_kcfg: KmdCfg): Promise<Account[]> {
+    return this.accounts;
+  }
+}
 
 describe("config loading", function () {
   describe("default config path", function () {
@@ -48,10 +70,10 @@ describe("config loading", function () {
       });
 
       it("Should throw the right error", function () {
-        expectBuilderError(
+        expectBuilderErrorAsync(
           () => loadConfigAndTasks(),
           ERRORS.GENERAL.INVALID_CONFIG
-        );
+        ).catch((err) => console.log(err));
       });
     });
   });
@@ -67,8 +89,8 @@ describe("config loading", function () {
       resetBuilderContext();
     });
 
-    it("should accept a relative path from the CWD", function () {
-      const config = loadConfigAndTasks({ config: "config.js" });
+    it("should accept a relative path from the CWD", async function () {
+      const config = await loadConfigAndTasks({ config: "config.js" });
 
       if (!config.paths) {
         assert.fail("Project was not loaded");
@@ -80,9 +102,9 @@ describe("config loading", function () {
       );
     });
 
-    it("should accept an absolute path", function () {
+    it("should accept an absolute path", async function () {
       const fixtureDir = getFixtureProjectPath("custom-config-file");
-      const config = loadConfigAndTasks({
+      const config = await loadConfigAndTasks({
         config: path.join(fixtureDir, "config.js")
       });
 
@@ -125,11 +147,11 @@ describe("config loading", function () {
       resetBuilderContext();
     });
 
-    it("should remove everything from global state after loading", function () {
+    it("should remove everything from global state after loading", async function () {
       const globalAsAny: any = global;
 
       BuilderContext.createBuilderContext();
-      loadConfigAndTasks();
+      await loadConfigAndTasks();
 
       assert.isUndefined(globalAsAny.internalTask);
       assert.isUndefined(globalAsAny.task);
@@ -140,7 +162,7 @@ describe("config loading", function () {
       resetBuilderContext();
 
       BuilderContext.createBuilderContext();
-      loadConfigAndTasks();
+      await loadConfigAndTasks();
 
       assert.isUndefined(globalAsAny.internalTask);
       assert.isUndefined(globalAsAny.task);
@@ -151,22 +173,85 @@ describe("config loading", function () {
     });
   });
 
-  describe("Config that imports the library", function () {
-    useFixtureProject("config-imports-lib-project");
+  describe("load kmd accounts", function () {
+    useFixtureProject("config-project");
+    useEnvironment();
+
+    const fakeKmd: Kmd = {} as Kmd; // eslint-disable-line @typescript-eslint/consistent-type-assertions
+    const kmdOp = new KMDOperatorMock(fakeKmd);
+    let net: NetworkConfig;
 
     beforeEach(function () {
-      BuilderContext.createBuilderContext();
+      net = this.env.config.networks.kmdNet;
     });
 
     afterEach(function () {
-      resetBuilderContext();
+      kmdOp.resetAccounts();
     });
 
-    it("should accept a relative path from the CWD", function () {
-      expectBuilderError(
-        () => loadConfigAndTasks(),
-        ERRORS.GENERAL.LIB_IMPORTED_FROM_THE_CONFIG
-      );
+    it("should ignore if kmd config is not defined", async function () {
+      net.kmdCfg = undefined;
+      const result = await loadKMDAccounts(net, kmdOp);
+      assert.isUndefined(result);
+    });
+
+    it("should not connect to kmd if config is invalid", async function () {
+      const invalidKmdCfg = net.kmdCfg as KmdCfg;
+      invalidKmdCfg.port = 123; // invalid port
+
+      expectBuilderErrorAsync(
+        () => loadKMDAccounts(net, new KMDOperator(createKmdClient(invalidKmdCfg))),
+        ERRORS.KMD.CONNECTION
+      ).catch((err) => console.log(err)); ;
+    });
+
+    it("should detect conflict of account names", async function () {
+      const spy = sinon.spy(console, 'warn');
+
+      kmdOp.addKmdAccount({ name: net.accounts[0].name, addr: "some-addr-1", sk: new Uint8Array(kmdOp.skArray) });
+      await loadKMDAccounts(net, kmdOp);
+
+      const warnMsg = "KMD account name conflict: KmdConfig and network.accounts both define an account with same name: ";
+      assert(spy.calledWith(warnMsg));
+      spy.restore();
+    });
+
+    it("network accounts should take precedence over KMD accounts", async function () {
+      const networkAcc = net.accounts[0];
+      const commonName = networkAcc.name;
+
+      // insert kmd account with same name but different address
+      const kmdAcc = {
+        name: commonName,
+        addr: 'some-different-addr',
+        sk: new Uint8Array(kmdOp.skArray)
+      };
+      kmdOp.addKmdAccount(kmdAcc);
+      await loadKMDAccounts(net, kmdOp);
+
+      assert.notInclude(net.accounts, kmdAcc); // network.accounts should not include kmd account with same name
+      assert.include(net.accounts, networkAcc); // network.accounts should include networkAcc (higher precendence)
+    });
+
+    it("kmd accounts with different names should be successfully merged", async function () {
+      kmdOp.addKmdAccount({ name: "some-different-name-1", addr: "some-addr-1", sk: new Uint8Array(kmdOp.skArray) });
+      kmdOp.addKmdAccount({ name: "some-different-name-2", addr: "some-addr-2", sk: new Uint8Array(kmdOp.skArray) });
+
+      await loadKMDAccounts(net, kmdOp);
+
+      for (const k of kmdOp.accounts) {
+        assert.include(net.accounts, k); // assert if kmd accounts are merged into network.accounts
+      }
+    });
+
+    it("private keys are correctly loaded", async function () {
+      kmdOp.addKmdAccount({ name: "some-name", addr: "some-addr", sk: new Uint8Array(kmdOp.skArray) });
+      await loadKMDAccounts(net, kmdOp);
+
+      for (const a of net.accounts) {
+        assert.isDefined(a.sk);
+        assert.typeOf(a.sk, 'Uint8Array');
+      }
     });
   });
 });

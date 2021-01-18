@@ -2,35 +2,79 @@
 // DON'T this account in any working environment because everyone can check it and use
 // the private keys (this accounts are visible to everyone).
 
-// Example: accounts constructed using mnemonic. `addr` is optional.
-// const { mkAccounts } = require("algob");
-// let accounts = mkAccounts([{
-//   addr: "KFMPC5QWM3SC54X7UWUW6OSDOIT3H3YA5UOCUAE2ABERXYSKZS5Q3X5IZY",
-//   mnemonic: "call boy rubber fashion arch day capable one sweet skate outside purse six early learn tuition eagle love breeze pizza loud today popular able divide"
-// }]);
+// NOTE: to be able to execute transactions, you need to use an active account with
+// a sufficient ALGO balance.
 
-// Example: accounts constructed using the Account object
-let accounts = [{
-  name: "owner",
-  addr: 'UDF7DS5QXECBUEDF3GZVHHLXDRJOVTGR7EORYGDBPJ2FNB5D5T636QMWZY',
-  sk: new Uint8Array([28,  45,  45,  15,  70, 188,  57, 228,  18,  21,  42, 228,  33, 187, 222, 162,  89,  15,  22,  52, 143, 171, 182,  17, 168, 238,  96, 177,  12, 163, 243, 231, 160, 203, 241, 203, 176, 185,   4,  26,  16, 101, 217, 179, 83, 157, 119,  28,  82, 234, 204, 209, 249,  29,  28, 24,  97, 122, 116,  86, 135, 163, 236, 253])
-}]
+/**
+   Check our /docs/algob-config.md documentation (https://github.com/scale-it/algorand-builder/blob/master/docs/algob-config.md) for more configuration options and ways how to
+  load a private keys:
+  + using mnemonic
+  + using binary secret key
+  + using KMD daemon
+  + loading from a file
+  + loading from an environment variable
+  + ...
+*/
 
-// const { loadAccountsFromFileSync } = require("algob");
-// // Example: accounts loaded from a file:
+// ## ACCOUNTS USING mnemonic ##
+const { mkAccounts, algodCredentialsFromEnv } = require("@algorand-builder/algob");
+let accounts = mkAccounts([{
+  // This account is created using `make setup-master-account` command from our
+  // `/infrastructure` directory. It already has many ALGOs
+  name: "master",
+  addr: "WWYNX3TKQYVEREVSW6QQP3SXSFOCE3SKUSEIVJ7YAGUPEACNI5UGI4DZCE",
+  mnemonic: "enforce drive foster uniform cradle tired win arrow wasp melt cattle chronic sport dinosaur announce shell correct shed amused dismiss mother jazz task above hospital"
+}]);
+
+// ## ACCOUNTS loaded from a FILE ##
+// const { loadAccountsFromFileSync } = require("@algorand-builder/algob");
 // const accFromFile = loadAccountsFromFileSync("assets/accounts_generated.yaml");
 // accounts = accounts.concat(accFromFile);
+
+
+
+/// ## Enabling KMD access
+/// Please check https://github.com/scale-it/algorand-builder/blob/master/docs/algob-config.md#credentials for more details and more methods.
+
+// process.env.$KMD_DATA = "/path_to/KMD_DATA";
+// let kmdCred = KMDCredentialsFromEnv();
+
+
+
+// ## Algod Credentials
+// You can set the credentials directly in this file:
 
 let defaultCfg = {
   host: "http://localhost",
   port: 8080,
-  token: "content_of/algorand-node-data/algod.token",
+  // Below is a token created through our script in `/infrastructure`
+  // If you use other setup, update it accordignly (eg content of algorand-node-data/algod.token)
+  token: "aade468d25a7aa48fec8082d6a847c48492066a2741f3731e613fdde086cd6e9",
   accounts: accounts,
+  // if you want to load accounts from KMD, you need to add the kmdCfg object. Please read
+  // algob-config.md documentation for details.
+  // kmdCfg: kmdCfg,
 };
+
+// You can also use Environment variables to get Algod credentials
+// Please check https://github.com/scale-it/algorand-builder/blob/master/docs/algob-config.md#credentials for more details and more methods.
+// Method 1
+process.env.ALGOD_ADDR = "127.0.0.1:8080";
+process.env.ALGOD_TOKEN = "algod_token";
+let algodCred = algodCredentialsFromEnv();
+
+
+let envCfg = {
+ host: algodCred.host,
+ port: algodCred.port,
+ token: algodCred.token,
+ accounts: accounts
+}
+
 
 module.exports = {
   networks: {
-    localhost: defaultCfg,
-    default: defaultCfg
+    default: defaultCfg,
+    prod: envCfg
   }
 };

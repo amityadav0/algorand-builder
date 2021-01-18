@@ -1,0 +1,18 @@
+[[source]]
+url = "https://pypi.python.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+pyteal = "*"
+pyyaml = "*"
+
+[dev-packages]
+
+[requires]
+python_version = "3.8"
+
+[packages.scratch_var]
+git = "https://github.com/algorand/pyteal.git"
+editable = true
+ref = "master"

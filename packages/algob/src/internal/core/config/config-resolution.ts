@@ -1,5 +1,4 @@
 import deepmerge from "deepmerge";
-import * as fs from "fs";
 import * as path from "path";
 
 import type {
@@ -83,9 +82,7 @@ export function resolveProjectPaths (
   userConfigPath: string,
   userPaths: UserPaths = {}
 ): ProjectPaths {
-  const configFile = fs.realpathSync(userConfigPath);
-  const configDir = path.dirname(configFile);
-
+  const configDir = path.dirname(userConfigPath);
   const root = resolvePathFrom(configDir, "", userPaths.root);
 
   const otherPathsEntries = Object.entries<string>(userPaths as StrMap).map<
@@ -97,7 +94,7 @@ export function resolveProjectPaths (
   return {
     ...otherPaths,
     root,
-    configFile,
+    configFile: userConfigPath,
     sources: resolvePathFrom(root, "contracts", userPaths.sources),
     cache: resolvePathFrom(root, "cache", userPaths.cache),
     artifacts: resolvePathFrom(root, "artifacts", userPaths.artifacts),

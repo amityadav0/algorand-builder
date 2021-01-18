@@ -1,10 +1,5 @@
 
-import { getFunctionName } from "io-ts/lib";
-
 function stringify (v: any): string { // eslint-disable-line @typescript-eslint/no-explicit-any
-  if (typeof v === "function") {
-    return getFunctionName(v);
-  }
   if (typeof v === "number" && !isFinite(v)) {
     if (isNaN(v)) {
       return "NaN";
@@ -35,7 +30,7 @@ export default class CfgErrors {
       expectedType));
   }
 
-  public concatenate (errors: string[]): void{
+  public appendErrors (errors: string[]): void {
     for (const e of errors) { this.errors.push(e); }
   }
 

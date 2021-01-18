@@ -2,6 +2,8 @@ module.exports = {
   env: {
     node: true,
     es6: true,
+    es2020: true,
+    mocha: true
   },
   plugins: ["simple-import-sort", "sonarjs"],
   extends: [
@@ -10,7 +12,7 @@ module.exports = {
   ],
   parserOptions: {
     project: "./tsconfig.json",
-    ecmaVersion: 2019,
+    ecmaVersion: 2020,
     // sourceType: "module"
   },
   rules:  {
@@ -24,13 +26,21 @@ module.exports = {
     "simple-import-sort/sort": "warn",
     "sort-imports": "off",
 
+    "@typescript-eslint/consistent-type-assertions": "off",
     "@typescript-eslint/promise-function-async": "off",
     "@typescript-eslint/no-dynamic-delete": "off",
     "@typescript-eslint/no-unused-vars": ["warn", { "vars": "all", "args": "none", "ignoreRestSiblings": false, "varsIgnorePattern": "_" }],
     "@typescript-eslint/quotes": "off",
+    "semi": "off",  // required for a proper work
     "@typescript-eslint/semi": ["error", "always"],
     "@typescript-eslint/strict-boolean-expressions": "off",
-
+    "@typescript-eslint/naming-convention": [
+      "error",
+      {
+        selector: "variable",
+        format: ["camelCase", "UPPER_CASE", "PascalCase"]
+      }
+    ],
     "sonarjs/cognitive-complexity": ["error", 16]
   }
 }

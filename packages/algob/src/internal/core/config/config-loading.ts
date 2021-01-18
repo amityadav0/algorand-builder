@@ -1,6 +1,8 @@
 import path from "path";
 
-import { ResolvedAlgobConfig, RuntimeArgs } from "../../../types";
+import { KMDOperator } from "../../../lib/account";
+import { createKmdClient } from "../../../lib/driver";
+import type { NetworkConfig, ResolvedAlgobConfig, RuntimeArgs } from "../../../types";
 import { BuilderContext } from "../../context";
 import { loadPluginFile } from "../plugins";
 import { getUserConfigPath } from "../project-structure";
@@ -12,9 +14,9 @@ function importCsjOrEsModule (filePath: string): any { // eslint-disable-line @t
   return imported.default !== undefined ? imported.default : imported;
 }
 
-export function loadConfigAndTasks (
+export async function loadConfigAndTasks (
   runtimeArgs?: Partial<RuntimeArgs>
-): ResolvedAlgobConfig {
+): Promise<ResolvedAlgobConfig> {
   let configPath =
     runtimeArgs !== undefined ? runtimeArgs.config : undefined;
 
@@ -38,7 +40,6 @@ export function loadConfigAndTasks (
   );
 
   loadPluginFile(path.join(__dirname, "..", "tasks", "builtin-tasks"));
-
   const defaultConfig = importCsjOrEsModule("./default-config");
   const userConfig = configPath !== undefined ? importCsjOrEsModule(configPath) : defaultConfig;
   validateConfig(userConfig);
@@ -46,10 +47,36 @@ export function loadConfigAndTasks (
   // To avoid bad practices we remove the previously exported stuff
   Object.keys(configEnv).forEach((key) => (globalAsAny[key] = undefined));
 
-  return resolveConfig(
+  const cfg = resolveConfig(
     configPath,
     defaultConfig,
     userConfig,
     BuilderContext.getBuilderContext().configExtenders
   );
+
+  const netname = runtimeArgs?.network;
+  if (netname !== undefined) {
+    const net = cfg.networks[netname];
+    if (net?.kmdCfg !== undefined) {
+      const kmdOp = new KMDOperator(createKmdClient(net.kmdCfg));
+      await loadKMDAccounts(net, kmdOp);
+    }
+  }
+
+  return cfg;
+}
+
+// loads KMD accounts if the net.kmdCfg is specified and merges them into net.accounts
+export async function loadKMDAccounts (net: NetworkConfig, kmdOp: KMDOperator): Promise<void> {
+  if (net.kmdCfg === undefined) { return; }
+  const kmdAccounts = await kmdOp.loadKMDAccounts(net.kmdCfg);
+  const accounts = new Set();
+  for (const a of net.accounts) { accounts.add(a.name); }
+  for (const a of kmdAccounts) {
+    if (accounts.has(a.name)) {
+      console.warn("KMD account name conflict: KmdConfig and network.accounts both define an account with same name: ", a.name);
+    } else {
+      net.accounts.push(a);
+    }
+  }
 }
